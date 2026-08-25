@@ -1,0 +1,1485 @@
+--[[
+    WARNING: Heads up! This script has not been verified by ScriptBlox. Use at your own risk!
+]]
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local RunService = game:GetService("RunService")
+local players = game:GetService("Players")
+local workspace = game:GetService("Workspace")
+local plr = players.LocalPlayer
+local camera = workspace.CurrentCamera
+local UserInputService = game:GetService("UserInputService")
+local mouse = plr:GetMouse()
+local HttpService = game:GetService("HttpService")
+
+--> [< Variables >] <--
+
+local aimbotEnabled = false
+local aiming = false
+local currentTarget = nil
+local espEnabled = false
+local configLoaded = false
+local selectedConfig = "default"
+local menuVisible = true
+local scriptRunning = true
+
+-- Настройки аимбота
+local settings = {
+    fov = 200,
+    smoothing = 0.1,
+    prediction = 0.065,
+    wallCheck = false,
+    stickyAim = false,
+    teamCheck = false,
+    healthCheck = false,
+    minHealth = 0,
+    aimPart = "Auto",
+    fovColor = Color3.fromRGB(255, 0, 0),
+    targetedColor = Color3.fromRGB(0, 255, 0),
+    rainbowFov = false,
+    aimMode = "Hold",
+    key = "BackSlash",
+    autoEnable = false,
+    showFovCircle = true,
+    fovThickness = 2,
+    fovTransparency = 0,
+    fovFilled = false,
+    menuKey = "RightControl"
+}
+
+-- Настройки ESP
+local espSettings = {
+    enabled = false,
+    boxColor = Color3.fromRGB(0, 255, 0),
+    boxThickness = 2,
+    transparency = 0.5,
+    showName = true,
+    showHealth = true,
+    showDistance = true,
+    showBox = true,
+    nameColor = Color3.fromRGB(255, 255, 255),
+    healthColor = Color3.fromRGB(255, 0, 0),
+    distanceColor = Color3.fromRGB(255, 255, 255)
+}
+
+-- Список всех возможных частей тела
+local BODY_PARTS = {
+    "Head",
+    "HumanoidRootPart",
+    "UpperTorso",
+    "Torso",
+    "LowerTorso",
+    "LeftUpperArm",
+    "RightUpperArm",
+    "LeftLowerArm",
+    "RightLowerArm",
+    "LeftUpperLeg",
+    "RightUpperLeg",
+    "LeftLowerLeg",
+    "RightLowerLeg",
+    "LeftHand",
+    "RightHand",
+    "LeftFoot",
+    "RightFoot"
+}
+
+-- Конфиги
+local CONFIG_FOLDER = "UniversalAimbot"
+local CONFIGS_FOLDER = "UniversalAimbot/Configs"
+local AUTOEXEC_FILE = "autoexec.json"
+
+local hue = 0
+local rainbowSpeed = 0.005
+local espObjects = {}
+local connections = {}
+
+-- Создание FOV круга
+local fovCircle = Drawing.new("Circle")
+fovCircle.Thickness = settings.fovThickness
+fovCircle.Radius = settings.fov
+fovCircle.Filled = settings.fovFilled
+fovCircle.Color = settings.fovColor
+fovCircle.Transparency = settings.fovTransparency
+fovCircle.Visible = false
+
+-- Функция для полной очистки
+local function fullCleanup()
+    print("🧹 Cleaning up...")
+    
+    for _, connection in ipairs(connections) do
+        pcall(function()
+            connection:Disconnect()
+        end)
+    end
+    connections = {}
+    
+    pcall(function()
+        fovCircle.Visible = false
+        fovCircle:Remove()
+    end)
+    
+    for _, esp in pairs(espObjects) do
+        pcall(function()
+            esp.box.Visible = false
+            esp.box:Remove()
+            esp.name.Visible = false
+            esp.name:Remove()
+            esp.health.Visible = false
+            esp.health:Remove()
+            esp.distance.Visible = false
+            esp.distance:Remove()
+            esp.healthBg.Visible = false
+            esp.healthBg:Remove()
+            esp.healthFill.Visible = false
+            esp.healthFill:Remove()
+        end)
+    end
+    espObjects = {}
+    
+    pcall(function()
+        Window:Destroy()
+    end)
+    
+    print("✅ Cleanup complete!")
+end
+
+-- Функция для закрытия чита
+local function closeScript()
+    print("🔴 Closing Universal Aimbot...")
+    scriptRunning = false
+    aimbotEnabled = false
+    aiming = false
+    currentTarget = nil
+    fullCleanup()
+    print("✅ Script closed successfully!")
+    error("Script closed by user")
+end
+
+-- Функция для скрытия/показа меню
+local function toggleMenu()
+    menuVisible = not menuVisible
+    if menuVisible then
+        Window:Show()
+        print("👁️ Menu shown")
+    else
+        Window:Hide()
+        print("👁️ Menu hidden")
+    end
+end
+
+-- Функция для сохранения конфига
+local function saveConfig(name)
+    local success, result = pcall(function()
+        if not name then name = selectedConfig end
+        
+        local config = {
+            name = name,
+            settings = {
+                fov = settings.fov,
+                smoothing = settings.smoothing,
+                prediction = settings.prediction,
+                wallCheck = settings.wallCheck,
+                stickyAim = settings.stickyAim,
+                teamCheck = settings.teamCheck,
+                healthCheck = settings.healthCheck,
+                minHealth = settings.minHealth,
+                aimPart = settings.aimPart,
+                fovColor = {
+                    R = settings.fovColor.R,
+                    G = settings.fovColor.G,
+                    B = settings.fovColor.B
+                },
+                targetedColor = {
+                    R = settings.targetedColor.R,
+                    G = settings.targetedColor.G,
+                    B = settings.targetedColor.B
+                },
+                rainbowFov = settings.rainbowFov,
+                aimMode = settings.aimMode,
+                key = settings.key,
+                showFovCircle = settings.showFovCircle,
+                fovThickness = settings.fovThickness,
+                fovTransparency = settings.fovTransparency,
+                fovFilled = settings.fovFilled,
+                menuKey = settings.menuKey
+            },
+            esp = {
+                enabled = espSettings.enabled,
+                boxColor = {
+                    R = espSettings.boxColor.R,
+                    G = espSettings.boxColor.G,
+                    B = espSettings.boxColor.B
+                },
+                boxThickness = espSettings.boxThickness,
+                transparency = espSettings.transparency,
+                showName = espSettings.showName,
+                showHealth = espSettings.showHealth,
+                showDistance = espSettings.showDistance,
+                showBox = espSettings.showBox,
+                nameColor = {
+                    R = espSettings.nameColor.R,
+                    G = espSettings.nameColor.G,
+                    B = espSettings.nameColor.B
+                },
+                healthColor = {
+                    R = espSettings.healthColor.R,
+                    G = espSettings.healthColor.G,
+                    B = espSettings.healthColor.B
+                },
+                distanceColor = {
+                    R = espSettings.distanceColor.R,
+                    G = espSettings.distanceColor.G,
+                    B = espSettings.distanceColor.B
+                }
+            }
+        }
+        
+        local jsonData = HttpService:JSONEncode(config)
+        writefile(CONFIGS_FOLDER .. "/" .. name .. ".json")
+        print("✅ Config '" .. name .. "' saved successfully!")
+        return true
+    end)
+    
+    if not success then
+        print("❌ Failed to save config: " .. tostring(result))
+        return false
+    end
+    return true
+end
+
+-- Функция для загрузки конфига
+local function loadConfig(name)
+    local success, result = pcall(function()
+        if not name then name = selectedConfig end
+        
+        if not isfile(CONFIGS_FOLDER .. "/" .. name .. ".json") then
+            print("❌ Config '" .. name .. "' not found!")
+            return false
+        end
+        
+        local jsonData = readfile(CONFIGS_FOLDER .. "/" .. name .. ".json")
+        local config = HttpService:JSONDecode(jsonData)
+        
+        local s = config.settings
+        settings.fov = s.fov or settings.fov
+        settings.smoothing = s.smoothing or settings.smoothing
+        settings.prediction = s.prediction or settings.prediction
+        settings.wallCheck = s.wallCheck ~= nil and s.wallCheck or settings.wallCheck
+        settings.stickyAim = s.stickyAim ~= nil and s.stickyAim or settings.stickyAim
+        settings.teamCheck = s.teamCheck ~= nil and s.teamCheck or settings.teamCheck
+        settings.healthCheck = s.healthCheck ~= nil and s.healthCheck or settings.healthCheck
+        settings.minHealth = s.minHealth or settings.minHealth
+        settings.aimPart = s.aimPart or settings.aimPart
+        settings.rainbowFov = s.rainbowFov ~= nil and s.rainbowFov or settings.rainbowFov
+        settings.aimMode = s.aimMode or settings.aimMode
+        settings.key = s.key or settings.key
+        settings.showFovCircle = s.showFovCircle ~= nil and s.showFovCircle or settings.showFovCircle
+        settings.fovThickness = s.fovThickness or settings.fovThickness
+        settings.fovTransparency = s.fovTransparency or settings.fovTransparency
+        settings.fovFilled = s.fovFilled ~= nil and s.fovFilled or settings.fovFilled
+        settings.menuKey = s.menuKey or settings.menuKey
+        
+        if s.fovColor then
+            settings.fovColor = Color3.fromRGB(
+                s.fovColor.R * 255,
+                s.fovColor.G * 255,
+                s.fovColor.B * 255
+            )
+        end
+        
+        if s.targetedColor then
+            settings.targetedColor = Color3.fromRGB(
+                s.targetedColor.R * 255,
+                s.targetedColor.G * 255,
+                s.targetedColor.B * 255
+            )
+        end
+        
+        local e = config.esp
+        if e then
+            espSettings.enabled = e.enabled ~= nil and e.enabled or espSettings.enabled
+            espSettings.boxThickness = e.boxThickness or espSettings.boxThickness
+            espSettings.transparency = e.transparency or espSettings.transparency
+            espSettings.showName = e.showName ~= nil and e.showName or espSettings.showName
+            espSettings.showHealth = e.showHealth ~= nil and e.showHealth or espSettings.showHealth
+            espSettings.showDistance = e.showDistance ~= nil and e.showDistance or espSettings.showDistance
+            espSettings.showBox = e.showBox ~= nil and e.showBox or espSettings.showBox
+            
+            if e.boxColor then
+                espSettings.boxColor = Color3.fromRGB(
+                    e.boxColor.R * 255,
+                    e.boxColor.G * 255,
+                    e.boxColor.B * 255
+                )
+            end
+            
+            if e.nameColor then
+                espSettings.nameColor = Color3.fromRGB(
+                    e.nameColor.R * 255,
+                    e.nameColor.G * 255,
+                    e.nameColor.B * 255
+                )
+            end
+            
+            if e.healthColor then
+                espSettings.healthColor = Color3.fromRGB(
+                    e.healthColor.R * 255,
+                    e.healthColor.G * 255,
+                    e.healthColor.B * 255
+                )
+            end
+            
+            if e.distanceColor then
+                espSettings.distanceColor = Color3.fromRGB(
+                    e.distanceColor.R * 255,
+                    e.distanceColor.G * 255,
+                    e.distanceColor.B * 255
+                )
+            end
+        end
+        
+        fovCircle.Radius = settings.fov
+        fovCircle.Color = settings.fovColor
+        fovCircle.Thickness = settings.fovThickness
+        fovCircle.Transparency = settings.fovTransparency
+        fovCircle.Filled = settings.fovFilled
+        
+        if not settings.showFovCircle then
+            fovCircle.Visible = false
+        end
+        
+        print("✅ Config '" .. name .. "' loaded successfully!")
+        return true
+    end)
+    
+    if not success then
+        print("❌ Failed to load config: " .. tostring(result))
+        return false
+    end
+    return success
+end
+
+-- Функция для получения списка конфигов
+local function getConfigList()
+    local configs = {"default"}
+    local success, result = pcall(function()
+        if isfolder(CONFIGS_FOLDER) then
+            local files = listfiles(CONFIGS_FOLDER)
+            for _, file in ipairs(files) do
+                local name = file:match("([^/]+)%.json$")
+                if name and name ~= "default" then
+                    table.insert(configs, name)
+                end
+            end
+        end
+    end)
+    return configs
+end
+
+-- Функция для сохранения настроек авто-загрузки
+local function saveAutoExec(configName, autoEnable)
+    local success, result = pcall(function()
+        if not isfolder(CONFIG_FOLDER) then
+            makefolder(CONFIG_FOLDER)
+        end
+        local autoexec = {
+            configName = configName or selectedConfig,
+            autoEnable = autoEnable ~= nil and autoEnable or settings.autoEnable
+        }
+        local jsonData = HttpService:JSONEncode(autoexec)
+        writefile(CONFIG_FOLDER .. "/" .. AUTOEXEC_FILE, jsonData)
+        print("✅ Auto-exec settings saved!")
+        return true
+    end)
+    
+    if not success then
+        print("❌ Failed to save auto-exec: " .. tostring(result))
+        return false
+    end
+    return true
+end
+
+-- Функция для загрузки настроек авто-загрузки
+local function loadAutoExec()
+    local success, result = pcall(function()
+        if not isfile(CONFIG_FOLDER .. "/" .. AUTOEXEC_FILE) then
+            return false
+        end
+        
+        local jsonData = readfile(CONFIG_FOLDER .. "/" .. AUTOEXEC_FILE)
+        local autoexec = HttpService:JSONDecode(jsonData)
+        
+        if autoexec.configName then
+            selectedConfig = autoexec.configName
+        end
+        
+        if autoexec.autoEnable then
+            settings.autoEnable = true
+        end
+        
+        return true
+    end)
+    
+    if not success then
+        print("❌ Failed to load auto-exec: " .. tostring(result))
+        return false
+    end
+    return success
+end
+
+-- Функция для создания папки конфигов
+local function ensureConfigFolder()
+    local success, result = pcall(function()
+        if not isfolder(CONFIG_FOLDER) then
+            makefolder(CONFIG_FOLDER)
+        end
+        if not isfolder(CONFIGS_FOLDER) then
+            makefolder(CONFIGS_FOLDER)
+        end
+    end)
+    
+    if not success then
+        print("❌ Failed to create config folder: " .. tostring(result))
+    end
+end
+
+-- ESP Функции
+local function createEspObject(player)
+    local esp = {}
+    
+    esp.box = Drawing.new("Square")
+    esp.box.Thickness = espSettings.boxThickness
+    esp.box.Color = espSettings.boxColor
+    esp.box.Transparency = espSettings.transparency
+    esp.box.Filled = false
+    esp.box.Visible = false
+    
+    esp.name = Drawing.new("Text")
+    esp.name.Color = espSettings.nameColor
+    esp.name.Size = 14
+    esp.name.Center = true
+    esp.name.Visible = false
+    
+    esp.health = Drawing.new("Text")
+    esp.health.Color = espSettings.healthColor
+    esp.health.Size = 12
+    esp.health.Center = true
+    esp.health.Visible = false
+    
+    esp.distance = Drawing.new("Text")
+    esp.distance.Color = espSettings.distanceColor
+    esp.distance.Size = 12
+    esp.distance.Center = true
+    esp.distance.Visible = false
+    
+    esp.healthBg = Drawing.new("Square")
+    esp.healthBg.Color = Color3.fromRGB(50, 50, 50)
+    esp.healthBg.Thickness = 1
+    esp.healthBg.Filled = true
+    esp.healthBg.Transparency = 0.5
+    esp.healthBg.Visible = false
+    
+    esp.healthFill = Drawing.new("Square")
+    esp.healthFill.Color = Color3.fromRGB(0, 255, 0)
+    esp.healthFill.Thickness = 0
+    esp.healthFill.Filled = true
+    esp.healthFill.Transparency = 0.5
+    esp.healthFill.Visible = false
+    
+    espObjects[player] = esp
+    return esp
+end
+
+local function updateEsp()
+    if not espSettings.enabled then
+        for _, esp in pairs(espObjects) do
+            esp.box.Visible = false
+            esp.name.Visible = false
+            esp.health.Visible = false
+            esp.distance.Visible = false
+            esp.healthBg.Visible = false
+            esp.healthFill.Visible = false
+        end
+        return
+    end
+    
+    local cameraPos = camera.CFrame.Position
+    
+    for _, player in ipairs(players:GetPlayers()) do
+        if player == plr then continue end
+        
+        local character = player.Character
+        if not character then continue end
+        
+        local humanoid = character:FindFirstChild("Humanoid")
+        if not humanoid or humanoid.Health <= 0 then continue end
+        
+        local head = character:FindFirstChild("Head")
+        if not head then continue end
+        
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        if not rootPart then continue end
+        
+        local esp = espObjects[player]
+        if not esp then
+            esp = createEspObject(player)
+        end
+        
+        local headPos, onScreen2 = camera:WorldToViewportPoint(head.Position)
+        local footPos, onScreen3 = camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, 2, 0))
+        
+        if not onScreen2 or not onScreen3 then
+            esp.box.Visible = false
+            esp.name.Visible = false
+            esp.health.Visible = false
+            esp.distance.Visible = false
+            esp.healthBg.Visible = false
+            esp.healthFill.Visible = false
+            continue
+        end
+        
+        local height = math.abs(headPos.Y - footPos.Y) + 10
+        local width = height * 0.4
+        local pos = Vector2.new(footPos.X - width/2, footPos.Y - height)
+        
+        if espSettings.showBox then
+            esp.box.Position = pos
+            esp.box.Size = Vector2.new(width, height)
+            esp.box.Color = espSettings.boxColor
+            esp.box.Thickness = espSettings.boxThickness
+            esp.box.Transparency = espSettings.transparency
+            esp.box.Visible = true
+        else
+            esp.box.Visible = false
+        end
+        
+        if espSettings.showName then
+            esp.name.Text = player.Name
+            esp.name.Position = Vector2.new(headPos.X, headPos.Y - height - 20)
+            esp.name.Color = espSettings.nameColor
+            esp.name.Visible = true
+        else
+            esp.name.Visible = false
+        end
+        
+        if espSettings.showDistance then
+            local distance = (rootPart.Position - cameraPos).Magnitude
+            esp.distance.Text = string.format("%.1fm", distance)
+            esp.distance.Position = Vector2.new(headPos.X, headPos.Y + 5)
+            esp.distance.Color = espSettings.distanceColor
+            esp.distance.Visible = true
+        else
+            esp.distance.Visible = false
+        end
+        
+        if espSettings.showHealth then
+            local healthPercent = humanoid.Health / humanoid.MaxHealth
+            local healthColor = Color3.fromRGB(
+                255 * (1 - healthPercent),
+                255 * healthPercent,
+                0
+            )
+            
+            esp.health.Text = string.format("%.0f%%", healthPercent * 100)
+            esp.health.Position = Vector2.new(headPos.X, headPos.Y - height - 35)
+            esp.health.Color = healthColor
+            esp.health.Visible = true
+            
+            local barWidth = width
+            local barHeight = 4
+            esp.healthBg.Position = Vector2.new(pos.X, pos.Y + height)
+            esp.healthBg.Size = Vector2.new(barWidth, barHeight)
+            esp.healthBg.Visible = true
+            
+            esp.healthFill.Position = Vector2.new(pos.X, pos.Y + height)
+            esp.healthFill.Size = Vector2.new(barWidth * healthPercent, barHeight)
+            esp.healthFill.Color = healthColor
+            esp.healthFill.Visible = true
+        else
+            esp.health.Visible = false
+            esp.healthBg.Visible = false
+            esp.healthFill.Visible = false
+        end
+    end
+    
+    for player, esp in pairs(espObjects) do
+        if not player.Parent then
+            esp.box.Visible = false
+            esp.name.Visible = false
+            esp.health.Visible = false
+            esp.distance.Visible = false
+            esp.healthBg.Visible = false
+            esp.healthFill.Visible = false
+            espObjects[player] = nil
+        end
+    end
+end
+
+-- Функция для получения лучшей доступной части тела
+local function getBestAimPart(character)
+    if not character then return nil end
+    
+    if settings.aimPart ~= "Auto" then
+        local part = character:FindFirstChild(settings.aimPart)
+        if part and part:IsA("BasePart") then
+            return part
+        end
+    end
+    
+    local cameraPos = camera.CFrame.Position
+    local bestPart = nil
+    local bestDistance = math.huge
+    
+    for _, partName in ipairs(BODY_PARTS) do
+        local part = character:FindFirstChild(partName)
+        if part and part:IsA("BasePart") then
+            local distance = (part.Position - cameraPos).Magnitude
+            if distance < bestDistance then
+                bestDistance = distance
+                bestPart = part
+            end
+        end
+    end
+    
+    if not bestPart then
+        for _, child in ipairs(character:GetChildren()) do
+            if child:IsA("BasePart") then
+                local distance = (child.Position - cameraPos).Magnitude
+                if distance < bestDistance then
+                    bestDistance = distance
+                    bestPart = child
+                end
+            end
+        end
+    end
+    
+    return bestPart
+end
+
+--> [< GUI >] <--
+
+local Window = Rayfield:CreateWindow({
+    Name = "▶ Universal Aimbot ◀",
+    LoadingTitle = "Loading...",
+    LoadingSubtitle = "by Agreed 🥵",
+    ConfigurationSaving = {
+        Enabled = false,
+        FolderName = "UniversalAimbot",
+        FileName = "byAgreed"
+    },
+})
+
+Window.OnClose = function()
+    closeScript()
+end
+
+local AimbotTab = Window:CreateTab("Aimbot 🎯")
+local VisualTab = Window:CreateTab("Visual 👁️")
+local ESPTab = Window:CreateTab("ESP 📡")
+local ConfigTab = Window:CreateTab("Config ⚙️")
+
+--> [< Aimbot Tab >] <--
+
+local aimbotToggle = AimbotTab:CreateToggle({
+    Name = "Enable Aimbot",
+    CurrentValue = false,
+    Flag = "AimbotEnabled",
+    Callback = function(Value)
+        aimbotEnabled = Value
+        if settings.showFovCircle then
+            fovCircle.Visible = Value
+        end
+        if not Value then
+            aiming = false
+            currentTarget = nil
+        end
+    end
+})
+
+AimbotTab:CreateDropdown({
+    Name = "Toggle Menu Key",
+    Options = {"RightControl", "RightShift", "LeftControl", "LeftShift", "F1", "F2", "F3", "Insert"},
+    CurrentOption = "RightControl",
+    Flag = "MenuKey",
+    Callback = function(Option)
+        settings.menuKey = Option
+        if Option == "RightControl" then
+            settings.menuKey = Enum.KeyCode.RightControl
+        elseif Option == "RightShift" then
+            settings.menuKey = Enum.KeyCode.RightShift
+        elseif Option == "LeftControl" then
+            settings.menuKey = Enum.KeyCode.LeftControl
+        elseif Option == "LeftShift" then
+            settings.menuKey = Enum.KeyCode.LeftShift
+        elseif Option == "F1" then
+            settings.menuKey = Enum.KeyCode.F1
+        elseif Option == "F2" then
+            settings.menuKey = Enum.KeyCode.F2
+        elseif Option == "F3" then
+            settings.menuKey = Enum.KeyCode.F3
+        elseif Option == "Insert" then
+            settings.menuKey = Enum.KeyCode.Insert
+        end
+    end
+})
+
+AimbotTab:CreateButton({
+    Name = "👁️ Hide Menu",
+    Callback = function()
+        toggleMenu()
+    end
+})
+
+AimbotTab:CreateButton({
+    Name = "🔴 Close Script",
+    Callback = function()
+        closeScript()
+    end
+})
+
+AimbotTab:CreateDropdown({
+    Name = "Activation Key",
+    Options = {"BackSlash", "LeftControl", "LeftShift", "F", "RMB"},
+    CurrentOption = "BackSlash",
+    Flag = "ActivationKey",
+    Callback = function(Option)
+        settings.key = Option
+        if Option == "BackSlash" then
+            settings.key = Enum.KeyCode.BackSlash
+        elseif Option == "LeftControl" then
+            settings.key = Enum.KeyCode.LeftControl
+        elseif Option == "LeftShift" then
+            settings.key = Enum.KeyCode.LeftShift
+        elseif Option == "F" then
+            settings.key = Enum.KeyCode.F
+        elseif Option == "RMB" then
+            settings.key = nil
+        end
+    end
+})
+
+local aimPartDropdown = AimbotTab:CreateDropdown({
+    Name = "Aim Part",
+    Options = {
+        "Auto (Best Available)",
+        "Head",
+        "HumanoidRootPart",
+        "UpperTorso",
+        "Torso",
+        "LowerTorso",
+        "LeftUpperArm",
+        "RightUpperArm",
+        "LeftLowerArm",
+        "RightLowerArm",
+        "LeftUpperLeg",
+        "RightUpperLeg",
+        "LeftLowerLeg",
+        "RightLowerLeg",
+        "LeftHand",
+        "RightHand",
+        "LeftFoot",
+        "RightFoot"
+    },
+    CurrentOption = "Auto (Best Available)",
+    Flag = "AimPart",
+    Callback = function(Option)
+        if Option == "Auto (Best Available)" then
+            settings.aimPart = "Auto"
+        else
+            settings.aimPart = Option
+        end
+    end
+})
+
+local modeToggle = AimbotTab:CreateToggle({
+    Name = "Toggle Mode (ON = Toggle, OFF = Hold)",
+    CurrentValue = false,
+    Flag = "AimMode",
+    Callback = function(Value)
+        settings.aimMode = Value and "Toggle" or "Hold"
+    end
+})
+
+AimbotTab:CreateSlider({
+    Name = "FOV Size",
+    Range = {0, 500},
+    Increment = 1,
+    CurrentValue = 200,
+    Flag = "FOVSize",
+    Callback = function(Value)
+        settings.fov = Value
+        fovCircle.Radius = Value
+    end
+})
+
+AimbotTab:CreateSlider({
+    Name = "Smoothing",
+    Range = {0, 100},
+    Increment = 1,
+    CurrentValue = 10,
+    Flag = "Smoothing",
+    Callback = function(Value)
+        settings.smoothing = Value / 100
+    end
+})
+
+AimbotTab:CreateSlider({
+    Name = "Prediction Strength",
+    Range = {0, 0.3},
+    Increment = 0.001,
+    CurrentValue = 0.065,
+    Flag = "Prediction",
+    Callback = function(Value)
+        settings.prediction = Value
+    end
+})
+
+AimbotTab:CreateToggle({
+    Name = "Wall Check",
+    CurrentValue = false,
+    Flag = "WallCheck",
+    Callback = function(Value)
+        settings.wallCheck = Value
+    end
+})
+
+AimbotTab:CreateToggle({
+    Name = "Sticky Aim",
+    CurrentValue = false,
+    Flag = "StickyAim",
+    Callback = function(Value)
+        settings.stickyAim = Value
+    end
+})
+
+AimbotTab:CreateToggle({
+    Name = "Team Check",
+    CurrentValue = false,
+    Flag = "TeamCheck",
+    Callback = function(Value)
+        settings.teamCheck = Value
+    end
+})
+
+AimbotTab:CreateToggle({
+    Name = "Health Check",
+    CurrentValue = false,
+    Flag = "HealthCheck",
+    Callback = function(Value)
+        settings.healthCheck = Value
+    end
+})
+
+AimbotTab:CreateSlider({
+    Name = "Min Health",
+    Range = {0, 100},
+    Increment = 1,
+    CurrentValue = 0,
+    Flag = "MinHealth",
+    Callback = function(Value)
+        settings.minHealth = Value
+    end
+})
+
+AimbotTab:CreateButton({
+    Name = "Show Available Parts",
+    Callback = function()
+        local character = plr.Character
+        if character then
+            local parts = {}
+            for _, partName in ipairs(BODY_PARTS) do
+                if character:FindFirstChild(partName) then
+                    table.insert(parts, partName)
+                end
+            end
+            if #parts > 0 then
+                print("📋 Available parts on your character:")
+                for i, part in ipairs(parts) do
+                    print(i .. ". " .. part)
+                end
+            else
+                print("❌ No standard body parts found!")
+            end
+        else
+            print("❌ Character not found!")
+        end
+    end
+})
+
+--> [< Visual Tab >] <--
+
+local fovVisibilityToggle = VisualTab:CreateToggle({
+    Name = "Show FOV Circle",
+    CurrentValue = true,
+    Flag = "ShowFovCircle",
+    Callback = function(Value)
+        settings.showFovCircle = Value
+        if not Value then
+            fovCircle.Visible = false
+        elseif aimbotEnabled then
+            fovCircle.Visible = true
+        end
+    end
+})
+
+VisualTab:CreateColorPicker({
+    Name = "FOV Color",
+    Color = settings.fovColor,
+    Callback = function(Color)
+        settings.fovColor = Color
+        if not settings.rainbowFov then
+            fovCircle.Color = Color
+        end
+    end
+})
+
+VisualTab:CreateColorPicker({
+    Name = "Targeted FOV Color",
+    Color = settings.targetedColor,
+    Callback = function(Color)
+        settings.targetedColor = Color
+    end
+})
+
+VisualTab:CreateToggle({
+    Name = "Rainbow FOV",
+    CurrentValue = false,
+    Flag = "RainbowFOV",
+    Callback = function(Value)
+        settings.rainbowFov = Value
+    end
+})
+
+VisualTab:CreateSlider({
+    Name = "FOV Circle Thickness",
+    Range = {1, 10},
+    Increment = 1,
+    CurrentValue = 2,
+    Flag = "FOVThickness",
+    Callback = function(Value)
+        settings.fovThickness = Value
+        fovCircle.Thickness = Value
+    end
+})
+
+VisualTab:CreateSlider({
+    Name = "FOV Circle Transparency",
+    Range = {0, 100},
+    Increment = 1,
+    CurrentValue = 0,
+    Flag = "FOVTransparency",
+    Callback = function(Value)
+        settings.fovTransparency = Value / 100
+        fovCircle.Transparency = Value / 100
+    end
+})
+
+VisualTab:CreateToggle({
+    Name = "Fill FOV Circle",
+    CurrentValue = false,
+    Flag = "FOVFilled",
+    Callback = function(Value)
+        settings.fovFilled = Value
+        fovCircle.Filled = Value
+    end
+})
+
+--> [< ESP Tab >] <--
+
+local espToggle = ESPTab:CreateToggle({
+    Name = "Enable ESP",
+    CurrentValue = false,
+    Flag = "ESPEnabled",
+    Callback = function(Value)
+        espSettings.enabled = Value
+        if not Value then
+            for _, esp in pairs(espObjects) do
+                esp.box.Visible = false
+                esp.name.Visible = false
+                esp.health.Visible = false
+                esp.distance.Visible = false
+                esp.healthBg.Visible = false
+                esp.healthFill.Visible = false
+            end
+        end
+    end
+})
+
+ESPTab:CreateToggle({
+    Name = "Show Box",
+    CurrentValue = true,
+    Flag = "ESPShowBox",
+    Callback = function(Value)
+        espSettings.showBox = Value
+    end
+})
+
+ESPTab:CreateToggle({
+    Name = "Show Name",
+    CurrentValue = true,
+    Flag = "ESPShowName",
+    Callback = function(Value)
+        espSettings.showName = Value
+    end
+})
+
+ESPTab:CreateToggle({
+    Name = "Show Health",
+    CurrentValue = true,
+    Flag = "ESPShowHealth",
+    Callback = function(Value)
+        espSettings.showHealth = Value
+    end
+})
+
+ESPTab:CreateToggle({
+    Name = "Show Distance",
+    CurrentValue = true,
+    Flag = "ESPShowDistance",
+    Callback = function(Value)
+        espSettings.showDistance = Value
+    end
+})
+
+ESPTab:CreateColorPicker({
+    Name = "Box Color",
+    Color = espSettings.boxColor,
+    Callback = function(Color)
+        espSettings.boxColor = Color
+    end
+})
+
+ESPTab:CreateColorPicker({
+    Name = "Name Color",
+    Color = espSettings.nameColor,
+    Callback = function(Color)
+        espSettings.nameColor = Color
+    end
+})
+
+ESPTab:CreateColorPicker({
+    Name = "Distance Color",
+    Color = espSettings.distanceColor,
+    Callback = function(Color)
+        espSettings.distanceColor = Color
+    end
+})
+
+ESPTab:CreateSlider({
+    Name = "Box Thickness",
+    Range = {1, 5},
+    Increment = 1,
+    CurrentValue = 2,
+    Flag = "ESPBoxThickness",
+    Callback = function(Value)
+        espSettings.boxThickness = Value
+    end
+})
+
+ESPTab:CreateSlider({
+    Name = "Box Transparency",
+    Range = {0, 100},
+    Increment = 1,
+    CurrentValue = 50,
+    Flag = "ESPTransparency",
+    Callback = function(Value)
+        espSettings.transparency = Value / 100
+    end
+})
+
+--> [< Config Tab >] <--
+
+local configDropdown = ConfigTab:CreateDropdown({
+    Name = "Select Config",
+    Options = getConfigList(),
+    CurrentOption = "default",
+    Flag = "SelectConfig",
+    Callback = function(Option)
+        selectedConfig = Option
+        print("Selected config: " .. Option)
+    end
+})
+
+ConfigTab:CreateButton({
+    Name = "💾 Save Current Config",
+    Callback = function()
+        ensureConfigFolder()
+        saveConfig(selectedConfig)
+        configDropdown:Refresh(getConfigList(), selectedConfig)
+    end
+})
+
+ConfigTab:CreateButton({
+    Name = "💾 Save As New Config",
+    Callback = function()
+        local name = "config_" .. os.time()
+        ensureConfigFolder()
+        saveConfig(name)
+        selectedConfig = name
+        configDropdown:Refresh(getConfigList(), selectedConfig)
+        print("✅ New config saved as: " .. name)
+    end
+})
+
+ConfigTab:CreateButton({
+    Name = "📂 Load Selected Config",
+    Callback = function()
+        ensureConfigFolder()
+        loadConfig(selectedConfig)
+        fovCircle.Radius = settings.fov
+        fovCircle.Color = settings.fovColor
+        fovCircle.Thickness = settings.fovThickness
+        fovCircle.Transparency = settings.fovTransparency
+        fovCircle.Filled = settings.fovFilled
+        if not settings.showFovCircle then
+            fovCircle.Visible = false
+        end
+        print("✅ Config loaded and applied!")
+    end
+})
+
+ConfigTab:CreateButton({
+    Name = "🗑️ Delete Selected Config",
+    Callback = function()
+        if selectedConfig == "default" then
+            print("❌ Cannot delete default config!")
+            return
+        end
+        
+        local success, result = pcall(function()
+            if isfile(CONFIGS_FOLDER .. "/" .. selectedConfig .. ".json") then
+                delfile(CONFIGS_FOLDER .. "/" .. selectedConfig .. ".json")
+                print("🗑️ Config '" .. selectedConfig .. "' deleted!")
+                selectedConfig = "default"
+                configDropdown:Refresh(getConfigList(), "default")
+            end
+        end)
+        
+        if not success then
+            print("❌ Failed to delete config: " .. tostring(result))
+        end
+    end
+})
+
+ConfigTab:CreateToggle({
+    Name = "🚀 Auto-Enable on Load",
+    CurrentValue = false,
+    Flag = "AutoEnable",
+    Callback = function(Value)
+        settings.autoEnable = Value
+        saveAutoExec(selectedConfig, Value)
+    end
+})
+
+ConfigTab:CreateToggle({
+    Name = "📂 Auto-Load Selected Config",
+    CurrentValue = false,
+    Flag = "AutoLoadConfig",
+    Callback = function(Value)
+        saveAutoExec(selectedConfig, settings.autoEnable)
+        if Value then
+            print("✅ Auto-load config enabled: " .. selectedConfig)
+        else
+            print("❌ Auto-load config disabled")
+        end
+    end
+})
+
+ConfigTab:CreateButton({
+    Name = "🔄 Reset to Defaults",
+    Callback = function()
+        settings.fov = 200
+        settings.smoothing = 0.1
+        settings.prediction = 0.065
+        settings.wallCheck = false
+        settings.stickyAim = false
+        settings.teamCheck = false
+        settings.healthCheck = false
+        settings.minHealth = 0
+        settings.aimPart = "Auto"
+        settings.fovColor = Color3.fromRGB(255, 0, 0)
+        settings.targetedColor = Color3.fromRGB(0, 255, 0)
+        settings.rainbowFov = false
+        settings.aimMode = "Hold"
+        settings.key = Enum.KeyCode.BackSlash
+        settings.autoEnable = false
+        settings.showFovCircle = true
+        settings.fovThickness = 2
+        settings.fovTransparency = 0
+        settings.fovFilled = false
+        
+        espSettings.enabled = false
+        espSettings.boxColor = Color3.fromRGB(0, 255, 0)
+        espSettings.boxThickness = 2
+        espSettings.transparency = 0.5
+        espSettings.showName = true
+        espSettings.showHealth = true
+        espSettings.showDistance = true
+        espSettings.showBox = true
+        
+        fovCircle.Radius = settings.fov
+        fovCircle.Color = settings.fovColor
+        fovCircle.Thickness = settings.fovThickness
+        fovCircle.Transparency = settings.fovTransparency
+        fovCircle.Filled = settings.fovFilled
+        
+        if aimbotEnabled and settings.showFovCircle then
+            fovCircle.Visible = true
+        end
+        
+        print("✅ Settings reset to defaults!")
+    end
+})
+
+--> [< Core Functions >] <--
+
+local function isSameTeam(player)
+    if not settings.teamCheck then return false end
+    if not player.Team or not plr.Team then return false end
+    return player.Team == plr.Team
+end
+
+local function isVisible(targetCharacter)
+    if not settings.wallCheck then return true end
+    
+    local targetPart = getBestAimPart(targetCharacter)
+    if not targetPart then return false end
+    
+    local origin = camera.CFrame.Position
+    local direction = (targetPart.Position - origin).unit * 500
+    
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterDescendantsInstances = {plr.Character, targetCharacter}
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    
+    local result = workspace:Raycast(origin, direction, raycastParams)
+    return not result or result.Instance:IsDescendantOf(targetCharacter)
+end
+
+local function getTarget()
+    local bestTarget = nil
+    local bestScore = math.huge
+    local cameraPos = camera.CFrame.Position
+    local mousePos = Vector2.new(mouse.X, mouse.Y)
+    
+    for _, player in ipairs(players:GetPlayers()) do
+        if player == plr then continue end
+        if isSameTeam(player) then continue end
+        
+        local character = player.Character
+        if not character then continue end
+        
+        local humanoid = character:FindFirstChild("Humanoid")
+        if not humanoid then continue end
+        
+        if settings.healthCheck and humanoid.Health < settings.minHealth then
+            continue
+        end
+        
+        if humanoid.Health <= 0 then continue end
+        
+        local targetPart = getBestAimPart(character)
+        if not targetPart then continue end
+        
+        if not isVisible(character) then continue end
+        
+        local screenPos, onScreen = camera:WorldToViewportPoint(targetPart.Position)
+        if not onScreen then continue end
+        
+        local cursorDist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+        
+        if cursorDist > settings.fov then continue end
+        
+        local distance = (targetPart.Position - cameraPos).Magnitude
+        local score = cursorDist + (distance / 1000)
+        
+        if score < bestScore then
+            bestScore = score
+            bestTarget = player
+        end
+    end
+    
+    return bestTarget
+end
+
+local function getPredictedPosition(player)
+    if not player or not player.Character then return nil end
+    
+    local targetPart = getBestAimPart(player.Character)
+    local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
+    if not targetPart or not rootPart then return nil end
+    
+    local velocity = rootPart.Velocity
+    local prediction = targetPart.Position + (velocity * settings.prediction)
+    
+    return prediction
+end
+
+local function smoothAim(targetPosition)
+    local currentCFrame = camera.CFrame
+    local targetCFrame = CFrame.new(currentCFrame.Position, targetPosition)
+    
+    local lerpFactor = math.clamp(1 - settings.smoothing, 0.01, 1)
+    camera.CFrame = currentCFrame:Lerp(targetCFrame, lerpFactor)
+end
+
+local function aimAtTarget(player)
+    if not player or not player.Character then return end
+    
+    local humanoid = player.Character:FindFirstChild("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return end
+    
+    local targetPos = getPredictedPosition(player)
+    if targetPos then
+        smoothAim(targetPos)
+    end
+end
+
+--> [< Input Handling >] <--
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    -- Клавиша для скрытия меню
+    if settings.menuKey and input.KeyCode == settings.menuKey then
+        toggleMenu()
+    end
+    
+    if not aimbotEnabled then return end
+    
+    if settings.key and input.KeyCode == settings.key then
+        if settings.aimMode == "Hold" then
+            aiming = true
+        elseif settings.aimMode == "Toggle" then
+            aiming = not aiming
+            if not aiming then
+                currentTarget = nil
+            end
+        end
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gameProcessed)
+    if gameProcessed or not aimbotEnabled then return end
+    
+    if settings.key and input.KeyCode == settings.key and settings.aimMode == "Hold" then
+        aiming = false
+        currentTarget = nil
+    end
+end)
+
+mouse.Button2Down:Connect(function()
+    if aimbotEnabled then
+        aiming = true
+    end
+end)
+
+mouse.Button2Up:Connect(function()
+    if aimbotEnabled and (not settings.key or settings.aimMode == "Hold") then
+        aiming = false
+        currentTarget = nil
+    end
+end)
+
+--> [< Main Loop >] <--
+
+RunService.RenderStepped:Connect(function()
+    updateEsp()
+    
+    if not aimbotEnabled then
+        fovCircle.Visible = false
+        return
+    end
+    
+    if settings.showFovCircle then
+        fovCircle.Position = Vector2.new(mouse.X, mouse.Y + 50)
+        fovCircle.Visible = true
+        
+        if settings.rainbowFov then
+            hue = (hue + rainbowSpeed) % 1
+            fovCircle.Color = Color3.fromHSV(hue, 1, 1)
+        elseif aiming and currentTarget then
+            fovCircle.Color = settings.targetedColor
+        else
+            fovCircle.Color = settings.fovColor
+        end
+    else
+        fovCircle.Visible = false
+    end
+    
+    if aiming then
+        if settings.stickyAim and currentTarget then
+            local character = currentTarget.Character
+            if character then
+                local targetPart = getBestAimPart(character)
+                if targetPart then
+                    local screenPos = camera:WorldToViewportPoint(targetPart.Position)
+                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(mouse.X, mouse.Y)).Magnitude
+                    
+                    if dist > settings.fov * 1.5 or not isVisible(character) then
+                        currentTarget = nil
+                    end
+                else
+                    currentTarget = nil
+                end
+            else
+                currentTarget = nil
+            end
+        end
+        
+        if not settings.stickyAim or not currentTarget then
+            currentTarget = getTarget()
+        end
+        
+        if currentTarget then
+            aimAtTarget(currentTarget)
+        end
+    else
+        currentTarget = nil
+    end
+end)
+
+--> [< Init >] <--
+
+print("====================================")
+print("🎯 Universal Aimbot loading...")
+print("====================================")
+
+ensureConfigFolder()
+
+loadAutoExec()
+
+if selectedConfig then
+    loadConfig(selectedConfig)
+    configLoaded = true
+end
+
+if settings.autoEnable then
+    task.wait(1)
+    if aimbotEnabled ~= true then
+        aimbotEnabled = true
+        if settings.showFovCircle then
+            fovCircle.Visible = true
+        end
+        print("🚀 Auto-exec: Aimbot enabled!")
+    end
+end
+
+for _, player in ipairs(players:GetPlayers()) do
+    if player ~= plr then
+        createEspObject(player)
+    end
+end
+
+players.PlayerAdded:Connect(function(player)
+    if player ~= plr then
+        createEspObject(player)
+    end
+end)
+
+print("====================================")
+print("✅ Aimbot loaded successfully!")
+print("📌 Press '\\' (BackSlash) or RMB to aim")
+print("📌 Press RightControl to hide/show menu")
+print("📌 Click X or 'Close Script' to close")
+print("====================================")
