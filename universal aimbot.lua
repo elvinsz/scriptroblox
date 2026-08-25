@@ -1,8 +1,30 @@
+
+## 📄 Полный скрипт для GitHub:
+
+Вот финальная версия скрипта, который нужно загрузить на GitHub:
+
+```lua
 --[[
-    WARNING: Heads up! This script has not been verified by ScriptBlox. Use at your own risk!
+    Universal Aimbot v2.0.0
+    GitHub: https://github.com/ваш-username/universal-aimbot
+    Описание: Универсальный аимбот с ESP и системой конфигов
 ]]
+
+-- Проверка на повторную загрузку
+if getgenv().UniversalAimbotLoaded then
+    print("⚠️ Universal Aimbot уже загружен!")
+    return
+end
+getgenv().UniversalAimbotLoaded = true
+
+-- Версия скрипта
+local SCRIPT_VERSION = "2.0.0"
+local GITHUB_RAW_URL = "https://raw.githubusercontent.com/ваш-username/universal-aimbot/main/"
+
+-- Загрузка Rayfield
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
+-- Основные сервисы
 local RunService = game:GetService("RunService")
 local players = game:GetService("Players")
 local workspace = game:GetService("Workspace")
@@ -12,16 +34,14 @@ local UserInputService = game:GetService("UserInputService")
 local mouse = plr:GetMouse()
 local HttpService = game:GetService("HttpService")
 
---> [< Variables >] <--
+--> [< Переменные >] <--
 
 local aimbotEnabled = false
 local aiming = false
 local currentTarget = nil
-local espEnabled = false
-local configLoaded = false
-local selectedConfig = "default"
 local menuVisible = true
 local scriptRunning = true
+local selectedConfig = "default"
 
 -- Настройки аимбота
 local settings = {
@@ -62,25 +82,12 @@ local espSettings = {
     distanceColor = Color3.fromRGB(255, 255, 255)
 }
 
--- Список всех возможных частей тела
+-- Части тела
 local BODY_PARTS = {
-    "Head",
-    "HumanoidRootPart",
-    "UpperTorso",
-    "Torso",
-    "LowerTorso",
-    "LeftUpperArm",
-    "RightUpperArm",
-    "LeftLowerArm",
-    "RightLowerArm",
-    "LeftUpperLeg",
-    "RightUpperLeg",
-    "LeftLowerLeg",
-    "RightLowerLeg",
-    "LeftHand",
-    "RightHand",
-    "LeftFoot",
-    "RightFoot"
+    "Head", "HumanoidRootPart", "UpperTorso", "Torso", "LowerTorso",
+    "LeftUpperArm", "RightUpperArm", "LeftLowerArm", "RightLowerArm",
+    "LeftUpperLeg", "RightUpperLeg", "LeftLowerLeg", "RightLowerLeg",
+    "LeftHand", "RightHand", "LeftFoot", "RightFoot"
 }
 
 -- Конфиги
@@ -99,17 +106,38 @@ fovCircle.Thickness = settings.fovThickness
 fovCircle.Radius = settings.fov
 fovCircle.Filled = settings.fovFilled
 fovCircle.Color = settings.fovColor
-fovCircle.Transparency = settings.fovTransparency
+fovCircle.Transparency = settings.fovTransparency / 100
 fovCircle.Visible = false
 
--- Функция для полной очистки
+--> [< Функции >] <--
+
+-- Проверка обновлений
+local function checkForUpdates()
+    local success, result = pcall(function()
+        local response = game:HttpGet(GITHUB_RAW_URL .. "version.txt")
+        local latestVersion = string.gsub(response, "%s+", "")
+        if latestVersion ~= SCRIPT_VERSION then
+            print("🔄 Доступна новая версия: " .. latestVersion)
+            print("📥 Текущая версия: " .. SCRIPT_VERSION)
+            return true, latestVersion
+        end
+        print("✅ У вас последняя версия: " .. SCRIPT_VERSION)
+        return false, SCRIPT_VERSION
+    end)
+    
+    if not success then
+        print("⚠️ Не удалось проверить обновления")
+        return false, SCRIPT_VERSION
+    end
+    return success, SCRIPT_VERSION
+end
+
+-- Очистка
 local function fullCleanup()
-    print("🧹 Cleaning up...")
+    print("🧹 Очистка...")
     
     for _, connection in ipairs(connections) do
-        pcall(function()
-            connection:Disconnect()
-        end)
+        pcall(function() connection:Disconnect() end)
     end
     connections = {}
     
@@ -136,44 +164,55 @@ local function fullCleanup()
     end
     espObjects = {}
     
-    pcall(function()
-        Window:Destroy()
-    end)
-    
-    print("✅ Cleanup complete!")
+    pcall(function() Window:Destroy() end)
+    print("✅ Очистка завершена!")
 end
 
--- Функция для закрытия чита
+-- Закрытие скрипта
 local function closeScript()
-    print("🔴 Closing Universal Aimbot...")
+    print("🔴 Закрытие Universal Aimbot...")
     scriptRunning = false
     aimbotEnabled = false
     aiming = false
     currentTarget = nil
     fullCleanup()
-    print("✅ Script closed successfully!")
+    getgenv().UniversalAimbotLoaded = false
+    print("✅ Скрипт закрыт!")
     error("Script closed by user")
 end
 
--- Функция для скрытия/показа меню
+-- Скрыть/показать меню
 local function toggleMenu()
     menuVisible = not menuVisible
     if menuVisible then
         Window:Show()
-        print("👁️ Menu shown")
     else
         Window:Hide()
-        print("👁️ Menu hidden")
     end
 end
 
--- Функция для сохранения конфига
+-- Конвертация Color3
+local function color3ToTable(color)
+    return { R = color.R, G = color.G, B = color.B }
+end
+
+local function tableToColor3(tbl)
+    if not tbl then return Color3.fromRGB(255, 255, 255) end
+    return Color3.fromRGB(tbl.R * 255, tbl.G * 255, tbl.B * 255)
+end
+
+-- Сохранение конфига
 local function saveConfig(name)
+    if not name then name = selectedConfig end
+    
     local success, result = pcall(function()
-        if not name then name = selectedConfig end
+        if not isfolder(CONFIGS_FOLDER) then
+            makefolder(CONFIGS_FOLDER)
+        end
         
         local config = {
             name = name,
+            version = SCRIPT_VERSION,
             settings = {
                 fov = settings.fov,
                 smoothing = settings.smoothing,
@@ -184,16 +223,8 @@ local function saveConfig(name)
                 healthCheck = settings.healthCheck,
                 minHealth = settings.minHealth,
                 aimPart = settings.aimPart,
-                fovColor = {
-                    R = settings.fovColor.R,
-                    G = settings.fovColor.G,
-                    B = settings.fovColor.B
-                },
-                targetedColor = {
-                    R = settings.targetedColor.R,
-                    G = settings.targetedColor.G,
-                    B = settings.targetedColor.B
-                },
+                fovColor = color3ToTable(settings.fovColor),
+                targetedColor = color3ToTable(settings.targetedColor),
                 rainbowFov = settings.rainbowFov,
                 aimMode = settings.aimMode,
                 key = settings.key,
@@ -205,164 +236,109 @@ local function saveConfig(name)
             },
             esp = {
                 enabled = espSettings.enabled,
-                boxColor = {
-                    R = espSettings.boxColor.R,
-                    G = espSettings.boxColor.G,
-                    B = espSettings.boxColor.B
-                },
+                boxColor = color3ToTable(espSettings.boxColor),
                 boxThickness = espSettings.boxThickness,
                 transparency = espSettings.transparency,
                 showName = espSettings.showName,
                 showHealth = espSettings.showHealth,
                 showDistance = espSettings.showDistance,
                 showBox = espSettings.showBox,
-                nameColor = {
-                    R = espSettings.nameColor.R,
-                    G = espSettings.nameColor.G,
-                    B = espSettings.nameColor.B
-                },
-                healthColor = {
-                    R = espSettings.healthColor.R,
-                    G = espSettings.healthColor.G,
-                    B = espSettings.healthColor.B
-                },
-                distanceColor = {
-                    R = espSettings.distanceColor.R,
-                    G = espSettings.distanceColor.G,
-                    B = espSettings.distanceColor.B
-                }
+                nameColor = color3ToTable(espSettings.nameColor),
+                healthColor = color3ToTable(espSettings.healthColor),
+                distanceColor = color3ToTable(espSettings.distanceColor)
             }
         }
         
         local jsonData = HttpService:JSONEncode(config)
         writefile(CONFIGS_FOLDER .. "/" .. name .. ".json")
-        print("✅ Config '" .. name .. "' saved successfully!")
+        print("✅ Конфиг '" .. name .. "' сохранен!")
         return true
     end)
     
     if not success then
-        print("❌ Failed to save config: " .. tostring(result))
+        print("❌ Ошибка сохранения: " .. tostring(result))
         return false
     end
     return true
 end
 
--- Функция для загрузки конфига
+-- Загрузка конфига
 local function loadConfig(name)
+    if not name then name = selectedConfig end
+    
     local success, result = pcall(function()
-        if not name then name = selectedConfig end
-        
         if not isfile(CONFIGS_FOLDER .. "/" .. name .. ".json") then
-            print("❌ Config '" .. name .. "' not found!")
+            print("❌ Конфиг '" .. name .. "' не найден!")
             return false
         end
         
         local jsonData = readfile(CONFIGS_FOLDER .. "/" .. name .. ".json")
         local config = HttpService:JSONDecode(jsonData)
         
+        if not config.settings then
+            print("❌ Неверный формат конфига!")
+            return false
+        end
+        
         local s = config.settings
-        settings.fov = s.fov or settings.fov
-        settings.smoothing = s.smoothing or settings.smoothing
-        settings.prediction = s.prediction or settings.prediction
-        settings.wallCheck = s.wallCheck ~= nil and s.wallCheck or settings.wallCheck
-        settings.stickyAim = s.stickyAim ~= nil and s.stickyAim or settings.stickyAim
-        settings.teamCheck = s.teamCheck ~= nil and s.teamCheck or settings.teamCheck
-        settings.healthCheck = s.healthCheck ~= nil and s.healthCheck or settings.healthCheck
-        settings.minHealth = s.minHealth or settings.minHealth
-        settings.aimPart = s.aimPart or settings.aimPart
-        settings.rainbowFov = s.rainbowFov ~= nil and s.rainbowFov or settings.rainbowFov
-        settings.aimMode = s.aimMode or settings.aimMode
-        settings.key = s.key or settings.key
-        settings.showFovCircle = s.showFovCircle ~= nil and s.showFovCircle or settings.showFovCircle
-        settings.fovThickness = s.fovThickness or settings.fovThickness
-        settings.fovTransparency = s.fovTransparency or settings.fovTransparency
-        settings.fovFilled = s.fovFilled ~= nil and s.fovFilled or settings.fovFilled
-        settings.menuKey = s.menuKey or settings.menuKey
+        settings.fov = s.fov or 200
+        settings.smoothing = s.smoothing or 0.1
+        settings.prediction = s.prediction or 0.065
+        settings.wallCheck = (s.wallCheck ~= nil) and s.wallCheck or false
+        settings.stickyAim = (s.stickyAim ~= nil) and s.stickyAim or false
+        settings.teamCheck = (s.teamCheck ~= nil) and s.teamCheck or false
+        settings.healthCheck = (s.healthCheck ~= nil) and s.healthCheck or false
+        settings.minHealth = s.minHealth or 0
+        settings.aimPart = s.aimPart or "Auto"
+        settings.rainbowFov = (s.rainbowFov ~= nil) and s.rainbowFov or false
+        settings.aimMode = s.aimMode or "Hold"
+        settings.key = s.key or "BackSlash"
+        settings.showFovCircle = (s.showFovCircle ~= nil) and s.showFovCircle or true
+        settings.fovThickness = s.fovThickness or 2
+        settings.fovTransparency = s.fovTransparency or 0
+        settings.fovFilled = (s.fovFilled ~= nil) and s.fovFilled or false
+        settings.menuKey = s.menuKey or "RightControl"
         
-        if s.fovColor then
-            settings.fovColor = Color3.fromRGB(
-                s.fovColor.R * 255,
-                s.fovColor.G * 255,
-                s.fovColor.B * 255
-            )
-        end
-        
-        if s.targetedColor then
-            settings.targetedColor = Color3.fromRGB(
-                s.targetedColor.R * 255,
-                s.targetedColor.G * 255,
-                s.targetedColor.B * 255
-            )
-        end
+        settings.fovColor = tableToColor3(s.fovColor)
+        settings.targetedColor = tableToColor3(s.targetedColor)
         
         local e = config.esp
         if e then
-            espSettings.enabled = e.enabled ~= nil and e.enabled or espSettings.enabled
-            espSettings.boxThickness = e.boxThickness or espSettings.boxThickness
-            espSettings.transparency = e.transparency or espSettings.transparency
-            espSettings.showName = e.showName ~= nil and e.showName or espSettings.showName
-            espSettings.showHealth = e.showHealth ~= nil and e.showHealth or espSettings.showHealth
-            espSettings.showDistance = e.showDistance ~= nil and e.showDistance or espSettings.showDistance
-            espSettings.showBox = e.showBox ~= nil and e.showBox or espSettings.showBox
+            espSettings.enabled = (e.enabled ~= nil) and e.enabled or false
+            espSettings.boxThickness = e.boxThickness or 2
+            espSettings.transparency = e.transparency or 0.5
+            espSettings.showName = (e.showName ~= nil) and e.showName or true
+            espSettings.showHealth = (e.showHealth ~= nil) and e.showHealth or true
+            espSettings.showDistance = (e.showDistance ~= nil) and e.showDistance or true
+            espSettings.showBox = (e.showBox ~= nil) and e.showBox or true
             
-            if e.boxColor then
-                espSettings.boxColor = Color3.fromRGB(
-                    e.boxColor.R * 255,
-                    e.boxColor.G * 255,
-                    e.boxColor.B * 255
-                )
-            end
-            
-            if e.nameColor then
-                espSettings.nameColor = Color3.fromRGB(
-                    e.nameColor.R * 255,
-                    e.nameColor.G * 255,
-                    e.nameColor.B * 255
-                )
-            end
-            
-            if e.healthColor then
-                espSettings.healthColor = Color3.fromRGB(
-                    e.healthColor.R * 255,
-                    e.healthColor.G * 255,
-                    e.healthColor.B * 255
-                )
-            end
-            
-            if e.distanceColor then
-                espSettings.distanceColor = Color3.fromRGB(
-                    e.distanceColor.R * 255,
-                    e.distanceColor.G * 255,
-                    e.distanceColor.B * 255
-                )
-            end
+            espSettings.boxColor = tableToColor3(e.boxColor)
+            espSettings.nameColor = tableToColor3(e.nameColor)
+            espSettings.healthColor = tableToColor3(e.healthColor)
+            espSettings.distanceColor = tableToColor3(e.distanceColor)
         end
         
         fovCircle.Radius = settings.fov
         fovCircle.Color = settings.fovColor
         fovCircle.Thickness = settings.fovThickness
-        fovCircle.Transparency = settings.fovTransparency
+        fovCircle.Transparency = settings.fovTransparency / 100
         fovCircle.Filled = settings.fovFilled
         
-        if not settings.showFovCircle then
-            fovCircle.Visible = false
-        end
-        
-        print("✅ Config '" .. name .. "' loaded successfully!")
+        print("✅ Конфиг '" .. name .. "' загружен!")
         return true
     end)
     
     if not success then
-        print("❌ Failed to load config: " .. tostring(result))
+        print("❌ Ошибка загрузки: " .. tostring(result))
         return false
     end
-    return success
+    return true
 end
 
--- Функция для получения списка конфигов
+-- Список конфигов
 local function getConfigList()
     local configs = {"default"}
-    local success, result = pcall(function()
+    pcall(function()
         if isfolder(CONFIGS_FOLDER) then
             local files = listfiles(CONFIGS_FOLDER)
             for _, file in ipairs(files) do
@@ -376,34 +352,28 @@ local function getConfigList()
     return configs
 end
 
--- Функция для сохранения настроек авто-загрузки
+-- Авто-загрузка
 local function saveAutoExec(configName, autoEnable)
-    local success, result = pcall(function()
+    pcall(function()
         if not isfolder(CONFIG_FOLDER) then
             makefolder(CONFIG_FOLDER)
         end
+        
         local autoexec = {
             configName = configName or selectedConfig,
-            autoEnable = autoEnable ~= nil and autoEnable or settings.autoEnable
+            autoEnable = autoEnable ~= nil and autoEnable or settings.autoEnable,
+            version = SCRIPT_VERSION
         }
+        
         local jsonData = HttpService:JSONEncode(autoexec)
         writefile(CONFIG_FOLDER .. "/" .. AUTOEXEC_FILE, jsonData)
-        print("✅ Auto-exec settings saved!")
-        return true
     end)
-    
-    if not success then
-        print("❌ Failed to save auto-exec: " .. tostring(result))
-        return false
-    end
-    return true
 end
 
--- Функция для загрузки настроек авто-загрузки
 local function loadAutoExec()
-    local success, result = pcall(function()
+    pcall(function()
         if not isfile(CONFIG_FOLDER .. "/" .. AUTOEXEC_FILE) then
-            return false
+            return
         end
         
         local jsonData = readfile(CONFIG_FOLDER .. "/" .. AUTOEXEC_FILE)
@@ -413,23 +383,15 @@ local function loadAutoExec()
             selectedConfig = autoexec.configName
         end
         
-        if autoexec.autoEnable then
-            settings.autoEnable = true
+        if autoexec.autoEnable ~= nil then
+            settings.autoEnable = autoexec.autoEnable
         end
-        
-        return true
     end)
-    
-    if not success then
-        print("❌ Failed to load auto-exec: " .. tostring(result))
-        return false
-    end
-    return success
 end
 
--- Функция для создания папки конфигов
+-- Создание папок
 local function ensureConfigFolder()
-    local success, result = pcall(function()
+    pcall(function()
         if not isfolder(CONFIG_FOLDER) then
             makefolder(CONFIG_FOLDER)
         end
@@ -437,13 +399,9 @@ local function ensureConfigFolder()
             makefolder(CONFIGS_FOLDER)
         end
     end)
-    
-    if not success then
-        print("❌ Failed to create config folder: " .. tostring(result))
-    end
 end
 
--- ESP Функции
+-- ESP
 local function createEspObject(player)
     local esp = {}
     
@@ -615,7 +573,7 @@ local function updateEsp()
     end
 end
 
--- Функция для получения лучшей доступной части тела
+-- Получение части тела
 local function getBestAimPart(character)
     if not character then return nil end
     
@@ -656,10 +614,113 @@ local function getBestAimPart(character)
     return bestPart
 end
 
+-- Core функции
+local function isSameTeam(player)
+    if not settings.teamCheck then return false end
+    if not player.Team or not plr.Team then return false end
+    return player.Team == plr.Team
+end
+
+local function isVisible(targetCharacter)
+    if not settings.wallCheck then return true end
+    
+    local targetPart = getBestAimPart(targetCharacter)
+    if not targetPart then return false end
+    
+    local origin = camera.CFrame.Position
+    local direction = (targetPart.Position - origin).unit * 500
+    
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterDescendantsInstances = {plr.Character, targetCharacter}
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    
+    local result = workspace:Raycast(origin, direction, raycastParams)
+    return not result or result.Instance:IsDescendantOf(targetCharacter)
+end
+
+local function getTarget()
+    local bestTarget = nil
+    local bestScore = math.huge
+    local cameraPos = camera.CFrame.Position
+    local mousePos = Vector2.new(mouse.X, mouse.Y)
+    
+    for _, player in ipairs(players:GetPlayers()) do
+        if player == plr then continue end
+        if isSameTeam(player) then continue end
+        
+        local character = player.Character
+        if not character then continue end
+        
+        local humanoid = character:FindFirstChild("Humanoid")
+        if not humanoid then continue end
+        
+        if settings.healthCheck and humanoid.Health < settings.minHealth then
+            continue
+        end
+        
+        if humanoid.Health <= 0 then continue end
+        
+        local targetPart = getBestAimPart(character)
+        if not targetPart then continue end
+        
+        if not isVisible(character) then continue end
+        
+        local screenPos, onScreen = camera:WorldToViewportPoint(targetPart.Position)
+        if not onScreen then continue end
+        
+        local cursorDist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+        
+        if cursorDist > settings.fov then continue end
+        
+        local distance = (targetPart.Position - cameraPos).Magnitude
+        local score = cursorDist + (distance / 1000)
+        
+        if score < bestScore then
+            bestScore = score
+            bestTarget = player
+        end
+    end
+    
+    return bestTarget
+end
+
+local function getPredictedPosition(player)
+    if not player or not player.Character then return nil end
+    
+    local targetPart = getBestAimPart(player.Character)
+    local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
+    if not targetPart or not rootPart then return nil end
+    
+    local velocity = rootPart.Velocity
+    local prediction = targetPart.Position + (velocity * settings.prediction)
+    
+    return prediction
+end
+
+local function smoothAim(targetPosition)
+    local currentCFrame = camera.CFrame
+    local targetCFrame = CFrame.new(currentCFrame.Position, targetPosition)
+    
+    local lerpFactor = math.clamp(1 - settings.smoothing, 0.01, 1)
+    camera.CFrame = currentCFrame:Lerp(targetCFrame, lerpFactor)
+end
+
+local function aimAtTarget(player)
+    if not player or not player.Character then return end
+    
+    local humanoid = player.Character:FindFirstChild("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return end
+    
+    local targetPos = getPredictedPosition(player)
+    if targetPos then
+        smoothAim(targetPos)
+    end
+end
+
 --> [< GUI >] <--
 
 local Window = Rayfield:CreateWindow({
-    Name = "▶ Universal Aimbot ◀",
+    Name = "▶ Universal Aimbot v" .. SCRIPT_VERSION .. " ◀",
     LoadingTitle = "Loading...",
     LoadingSubtitle = "by Agreed 🥵",
     ConfigurationSaving = {
@@ -673,14 +734,16 @@ Window.OnClose = function()
     closeScript()
 end
 
+-- Вкладки
 local AimbotTab = Window:CreateTab("Aimbot 🎯")
 local VisualTab = Window:CreateTab("Visual 👁️")
 local ESPTab = Window:CreateTab("ESP 📡")
 local ConfigTab = Window:CreateTab("Config ⚙️")
+local GitHubTab = Window:CreateTab("GitHub 📦")
 
 --> [< Aimbot Tab >] <--
 
-local aimbotToggle = AimbotTab:CreateToggle({
+AimbotTab:CreateToggle({
     Name = "Enable Aimbot",
     CurrentValue = false,
     Flag = "AimbotEnabled",
@@ -758,7 +821,7 @@ AimbotTab:CreateDropdown({
     end
 })
 
-local aimPartDropdown = AimbotTab:CreateDropdown({
+AimbotTab:CreateDropdown({
     Name = "Aim Part",
     Options = {
         "Auto (Best Available)",
@@ -791,7 +854,7 @@ local aimPartDropdown = AimbotTab:CreateDropdown({
     end
 })
 
-local modeToggle = AimbotTab:CreateToggle({
+AimbotTab:CreateToggle({
     Name = "Toggle Mode (ON = Toggle, OFF = Hold)",
     CurrentValue = false,
     Flag = "AimMode",
@@ -893,22 +956,20 @@ AimbotTab:CreateButton({
                 end
             end
             if #parts > 0 then
-                print("📋 Available parts on your character:")
+                print("📋 Available parts:")
                 for i, part in ipairs(parts) do
                     print(i .. ". " .. part)
                 end
             else
-                print("❌ No standard body parts found!")
+                print("❌ No parts found!")
             end
-        else
-            print("❌ Character not found!")
         end
     end
 })
 
 --> [< Visual Tab >] <--
 
-local fovVisibilityToggle = VisualTab:CreateToggle({
+VisualTab:CreateToggle({
     Name = "Show FOV Circle",
     CurrentValue = true,
     Flag = "ShowFovCircle",
@@ -969,7 +1030,7 @@ VisualTab:CreateSlider({
     CurrentValue = 0,
     Flag = "FOVTransparency",
     Callback = function(Value)
-        settings.fovTransparency = Value / 100
+        settings.fovTransparency = Value
         fovCircle.Transparency = Value / 100
     end
 })
@@ -986,7 +1047,7 @@ VisualTab:CreateToggle({
 
 --> [< ESP Tab >] <--
 
-local espToggle = ESPTab:CreateToggle({
+ESPTab:CreateToggle({
     Name = "Enable ESP",
     CurrentValue = false,
     Flag = "ESPEnabled",
@@ -1096,7 +1157,7 @@ local configDropdown = ConfigTab:CreateDropdown({
     Flag = "SelectConfig",
     Callback = function(Option)
         selectedConfig = Option
-        print("Selected config: " .. Option)
+        print("Selected: " .. Option)
     end
 })
 
@@ -1117,7 +1178,7 @@ ConfigTab:CreateButton({
         saveConfig(name)
         selectedConfig = name
         configDropdown:Refresh(getConfigList(), selectedConfig)
-        print("✅ New config saved as: " .. name)
+        print("✅ Saved as: " .. name)
     end
 })
 
@@ -1126,15 +1187,7 @@ ConfigTab:CreateButton({
     Callback = function()
         ensureConfigFolder()
         loadConfig(selectedConfig)
-        fovCircle.Radius = settings.fov
-        fovCircle.Color = settings.fovColor
-        fovCircle.Thickness = settings.fovThickness
-        fovCircle.Transparency = settings.fovTransparency
-        fovCircle.Filled = settings.fovFilled
-        if not settings.showFovCircle then
-            fovCircle.Visible = false
-        end
-        print("✅ Config loaded and applied!")
+        print("✅ Config loaded!")
     end
 })
 
@@ -1142,22 +1195,18 @@ ConfigTab:CreateButton({
     Name = "🗑️ Delete Selected Config",
     Callback = function()
         if selectedConfig == "default" then
-            print("❌ Cannot delete default config!")
+            print("❌ Cannot delete default!")
             return
         end
         
-        local success, result = pcall(function()
+        pcall(function()
             if isfile(CONFIGS_FOLDER .. "/" .. selectedConfig .. ".json") then
                 delfile(CONFIGS_FOLDER .. "/" .. selectedConfig .. ".json")
-                print("🗑️ Config '" .. selectedConfig .. "' deleted!")
+                print("🗑️ Deleted: " .. selectedConfig)
                 selectedConfig = "default"
                 configDropdown:Refresh(getConfigList(), "default")
             end
         end)
-        
-        if not success then
-            print("❌ Failed to delete config: " .. tostring(result))
-        end
     end
 })
 
@@ -1177,11 +1226,7 @@ ConfigTab:CreateToggle({
     Flag = "AutoLoadConfig",
     Callback = function(Value)
         saveAutoExec(selectedConfig, settings.autoEnable)
-        if Value then
-            print("✅ Auto-load config enabled: " .. selectedConfig)
-        else
-            print("❌ Auto-load config disabled")
-        end
+        print(Value and "✅ Auto-load enabled" or "❌ Auto-load disabled")
     end
 })
 
@@ -1201,8 +1246,7 @@ ConfigTab:CreateButton({
         settings.targetedColor = Color3.fromRGB(0, 255, 0)
         settings.rainbowFov = false
         settings.aimMode = "Hold"
-        settings.key = Enum.KeyCode.BackSlash
-        settings.autoEnable = false
+        settings.key = "BackSlash"
         settings.showFovCircle = true
         settings.fovThickness = 2
         settings.fovTransparency = 0
@@ -1220,127 +1264,56 @@ ConfigTab:CreateButton({
         fovCircle.Radius = settings.fov
         fovCircle.Color = settings.fovColor
         fovCircle.Thickness = settings.fovThickness
-        fovCircle.Transparency = settings.fovTransparency
+        fovCircle.Transparency = settings.fovTransparency / 100
         fovCircle.Filled = settings.fovFilled
         
-        if aimbotEnabled and settings.showFovCircle then
-            fovCircle.Visible = true
-        end
-        
-        print("✅ Settings reset to defaults!")
+        print("✅ Reset to defaults!")
     end
 })
 
---> [< Core Functions >] <--
+--> [< GitHub Tab >] <--
 
-local function isSameTeam(player)
-    if not settings.teamCheck then return false end
-    if not player.Team or not plr.Team then return false end
-    return player.Team == plr.Team
-end
-
-local function isVisible(targetCharacter)
-    if not settings.wallCheck then return true end
-    
-    local targetPart = getBestAimPart(targetCharacter)
-    if not targetPart then return false end
-    
-    local origin = camera.CFrame.Position
-    local direction = (targetPart.Position - origin).unit * 500
-    
-    local raycastParams = RaycastParams.new()
-    raycastParams.FilterDescendantsInstances = {plr.Character, targetCharacter}
-    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-    
-    local result = workspace:Raycast(origin, direction, raycastParams)
-    return not result or result.Instance:IsDescendantOf(targetCharacter)
-end
-
-local function getTarget()
-    local bestTarget = nil
-    local bestScore = math.huge
-    local cameraPos = camera.CFrame.Position
-    local mousePos = Vector2.new(mouse.X, mouse.Y)
-    
-    for _, player in ipairs(players:GetPlayers()) do
-        if player == plr then continue end
-        if isSameTeam(player) then continue end
-        
-        local character = player.Character
-        if not character then continue end
-        
-        local humanoid = character:FindFirstChild("Humanoid")
-        if not humanoid then continue end
-        
-        if settings.healthCheck and humanoid.Health < settings.minHealth then
-            continue
-        end
-        
-        if humanoid.Health <= 0 then continue end
-        
-        local targetPart = getBestAimPart(character)
-        if not targetPart then continue end
-        
-        if not isVisible(character) then continue end
-        
-        local screenPos, onScreen = camera:WorldToViewportPoint(targetPart.Position)
-        if not onScreen then continue end
-        
-        local cursorDist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
-        
-        if cursorDist > settings.fov then continue end
-        
-        local distance = (targetPart.Position - cameraPos).Magnitude
-        local score = cursorDist + (distance / 1000)
-        
-        if score < bestScore then
-            bestScore = score
-            bestTarget = player
+GitHubTab:CreateButton({
+    Name = "🔄 Check for Updates",
+    Callback = function()
+        local hasUpdate, version = checkForUpdates()
+        if hasUpdate then
+            print("📥 New version: " .. version)
+            print("📥 Download from: " .. GITHUB_RAW_URL .. "aimbot.lua")
         end
     end
-    
-    return bestTarget
-end
+})
 
-local function getPredictedPosition(player)
-    if not player or not player.Character then return nil end
-    
-    local targetPart = getBestAimPart(player.Character)
-    local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
-    if not targetPart or not rootPart then return nil end
-    
-    local velocity = rootPart.Velocity
-    local prediction = targetPart.Position + (velocity * settings.prediction)
-    
-    return prediction
-end
-
-local function smoothAim(targetPosition)
-    local currentCFrame = camera.CFrame
-    local targetCFrame = CFrame.new(currentCFrame.Position, targetPosition)
-    
-    local lerpFactor = math.clamp(1 - settings.smoothing, 0.01, 1)
-    camera.CFrame = currentCFrame:Lerp(targetCFrame, lerpFactor)
-end
-
-local function aimAtTarget(player)
-    if not player or not player.Character then return end
-    
-    local humanoid = player.Character:FindFirstChild("Humanoid")
-    if not humanoid or humanoid.Health <= 0 then return end
-    
-    local targetPos = getPredictedPosition(player)
-    if targetPos then
-        smoothAim(targetPos)
+GitHubTab:CreateButton({
+    Name = "📋 Copy GitHub URL",
+    Callback = function()
+        setclipboard("https://github.com/ваш-username/universal-aimbot")
+        print("✅ URL copied to clipboard!")
     end
-end
+})
+
+GitHubTab:CreateButton({
+    Name = "📋 Copy Loadstring",
+    Callback = function()
+        local loadstring = 'loadstring(game:HttpGet("' .. GITHUB_RAW_URL .. 'aimbot.lua"))()'
+        setclipboard(loadstring)
+        print("✅ Loadstring copied to clipboard!")
+    end
+})
+
+GitHubTab:CreateLabel({
+    Name = "📌 Version: " .. SCRIPT_VERSION
+})
+
+GitHubTab:CreateLabel({
+    Name = "📌 Repository: universal-aimbot"
+})
 
 --> [< Input Handling >] <--
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     
-    -- Клавиша для скрытия меню
     if settings.menuKey and input.KeyCode == settings.menuKey then
         toggleMenu()
     end
@@ -1442,16 +1415,14 @@ end)
 --> [< Init >] <--
 
 print("====================================")
-print("🎯 Universal Aimbot loading...")
+print("🎯 Universal Aimbot v" .. SCRIPT_VERSION)
 print("====================================")
 
 ensureConfigFolder()
-
 loadAutoExec()
 
 if selectedConfig then
     loadConfig(selectedConfig)
-    configLoaded = true
 end
 
 if settings.autoEnable then
@@ -1461,10 +1432,11 @@ if settings.autoEnable then
         if settings.showFovCircle then
             fovCircle.Visible = true
         end
-        print("🚀 Auto-exec: Aimbot enabled!")
+        print("🚀 Auto-exec enabled!")
     end
 end
 
+-- Создаем ESP для существующих игроков
 for _, player in ipairs(players:GetPlayers()) do
     if player ~= plr then
         createEspObject(player)
@@ -1476,6 +1448,9 @@ players.PlayerAdded:Connect(function(player)
         createEspObject(player)
     end
 end)
+
+-- Проверяем обновления
+checkForUpdates()
 
 print("====================================")
 print("✅ Aimbot loaded successfully!")
