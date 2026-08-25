@@ -22,7 +22,7 @@ local SCRIPT_VERSION = "2.0.0"
 local GITHUB_RAW_URL = "https://raw.githubusercontent.com/ваш-username/universal-aimbot/main/"
 
 -- Загрузка Rayfield
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/main/source.lua'))()
 
 -- Основные сервисы
 local RunService = game:GetService("RunService")
